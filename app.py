@@ -39,8 +39,7 @@ def preprocess_text(text):
 cleaned_text = preprocess_text(raw_text)
 
 # 안전하고 깨끗한 PDF 출력을 위한 HTML/CSS 템플릿
-HTML_TEMPLATE = """
-<!DOCTYPE html>
+HTML_TEMPLATE = """<!DOCTYPE html>
 <html>
 <head>
     <meta charset="utf-8">
@@ -52,8 +51,8 @@ HTML_TEMPLATE = """
                 delimiters: [
                     {{left: '\\[', right: '\\]', display: true}},
                     {{left: '\\(', right: '\\)', display: false}},
-                    {{left: '\\[', right: '\\]', display: true}},
-                    {{left: '\\(', right: '\\)', display: false}}
+                    {{left: '$$', right: '$$', display: true}},
+                    {{left: '$', right: '$', display: false}}
                 ]
             }});"></script>
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
@@ -115,8 +114,7 @@ HTML_TEMPLATE = """
         document.getElementById('content').innerHTML = marked.parse(rawMarkdown);
     </script>
 </body>
-</html>
-"""
+</html>"""
 
 with col2:
     st.subheader("✨ 정돈된 문서 미리보기 & PDF 저장")
@@ -128,36 +126,37 @@ with col2:
         markdown_json_str = json.dumps(cleaned_text)
         html_code = HTML_TEMPLATE.format(markdown_json=markdown_json_str)
 
-        # 2. 보안 경고 없이 깔끔하게 PDF 저장창을 띄우는 원클릭 버튼
-        components.html(
-            f"""
-            <script>
-            function saveAsPDF() {{
-                var pWin = window.open('', '_blank');
-                pWin.document.write(`{html_code}`);
-                pWin.document.close();
-                setTimeout(function() {{
-                    pWin.focus();
-                    pWin.print();
-                }}, 500);
-            }}
-            </script>
-            <button onclick="saveAsPDF()" style="
-                width: 100%;
-                background-color: #2b6cb0;
-                color: white;
-                border: none;
-                padding: 14px;
-                border-radius: 8px;
-                font-weight: bold;
-                font-size: 16px;
-                cursor: pointer;
-                box-shadow: 0 2px 5px rgba(0,0,0,0.15);">
-                📄 PDF 문서로 저장하기 (보안 경고 없음)
-            </button>
-            """,
-            height=65,
-        )
+        # 2. 안전하게 캡슐화된 PDF 저장 버튼
+        button_html = f"""
+        <script>
+        const docHtml = {json.dumps(html_code)};
+        function saveAsPDF() {{
+            var pWin = window.open('', '_blank');
+            pWin.document.write(docHtml);
+            pWin.document.close();
+            setTimeout(function() {{
+                pWin.focus();
+                pWin.print();
+            }}, 500);
+        }}
+        </script>
+        <button onclick="saveAsPDF()" style="
+            width: 100%;
+            background-color: #2b6cb0;
+            color: white;
+            border: none;
+            padding: 14px;
+            border-radius: 8px;
+            font-weight: bold;
+            font-size: 16px;
+            cursor: pointer;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.15);">
+            📄 PDF 문서로 저장하기 (보안 경고 없음)
+        </button>
+        """
+
+        components.html(button_html, height=65)
     else:
         st.info(
             "왼쪽 상자에 Gemini 대화의 [복사] 버튼을 누른 텍스트를 붙여넣으시면, PDF 저장 버튼이 나타납니다."
+        )
