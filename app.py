@@ -38,7 +38,7 @@ tab1, tab2 = st.tabs(["📋 1. 대화/텍스트 직접 붙여넣기", "🤖 2. �
 def preprocess_text(text):
     if not text:
         return ""
-    # \\( \\) 및 \\[ \\] 형태를 \$ \$ 및 \\[ \\] 로 통일하여 처리 안정성 향상
+    # \\( \\) 및 \\[ \\] 형태를 \$ \$ 및 \\[ \\] 로 통일하여 처리
     text = re.sub(r'\\\((.*?)\\\)', r'\\(\1\\)', text)
     text = re.sub(r'\\\[(.*?)\\\]', r'\\[\1\\]', text)
     # 3줄 이상 연속된 줄바꿈을 2줄로 정리
@@ -168,40 +168,43 @@ HTML_TEMPLATE = """<!DOCTYPE html>
             
             const mathBlocks = [];
 
-            // 1. 디스플레이 수식 (\\[ ... \\]) 보호 및 미리 KaTeX 렌더링
+            // 1. 디스플레이 수식 (\\[ ... \\]) 보호 (영문 알파벳 플레이스홀더 사용)
             let protectedText = markdownText.replace(/\\$\\$([\\s\\S]+?)\\$\\$/g, (match, math) => {{
                 try {{
                     const html = katex.renderToString(math.trim(), {{ displayMode: true, throwOnError: false }});
-                    mathBlocks.push(html);
-                    return `\\n\\n___MATH_BLOCK_${{mathBlocks.length - 1}}___\\n\\n`;
+                    mathBlocks.push({{ type: 'block', html: html }});
+                    return `\\n\\nKATEXBLOCKPH${{mathBlocks.length - 1}}ENDPH\\n\\n`;
                 }} catch (e) {{
                     return match;
                 }}
             }});
 
-            // 2. 인라인 수식 (\\( ... \\)) 보호 및 미리 KaTeX 렌더링
+            // 2. 인라인 수식 (\\( ... \\)) 보호 (영문 알파벳 플레이스홀더 사용)
             protectedText = protectedText.replace(/\\$([^\\$\\n]+?)\\$/g, (match, math) => {{
                 try {{
                     const html = katex.renderToString(math.trim(), {{ displayMode: false, throwOnError: false }});
-                    mathBlocks.push(html);
-                    return `___MATH_INLINE_${{mathBlocks.length - 1}}___`;
+                    mathBlocks.push({{ type: 'inline', html: html }});
+                    return `KATEXINLINEPH${{mathBlocks.length - 1}}ENDPH`;
                 }} catch (e) {{
                     return match;
                 }}
             }});
 
-            // 3. 마크다운 파싱 (수식이 이미 보호되었으므로 _, ^, \\ 등이 절대 깨지지 않음)
+            // 3. 마크다운 파싱 (수식이 변형되지 않고 안전하게 보존됨)
             let htmlContent = marked.parse(protectedText);
 
-            // 4. 렌더링된 KaTeX HTML 복원
-            mathBlocks.forEach((renderedHtml, index) => {{
-                const blockPlaceholder = `<p>___MATH_BLOCK_${{index}}___</p>`;
-                if (htmlContent.includes(blockPlaceholder)) {{
-                    htmlContent = htmlContent.replace(blockPlaceholder, `<div class="katex-display">${{renderedHtml}}</div>`);
+            // 4. 렌더링된 KaTeX HTML 정확히 복원
+            mathBlocks.forEach((item, index) => {{
+                if (item.type === 'block') {{
+                    const blockP = `<p>KATEXBLOCKPH${{index}}ENDPH</p>`;
+                    if (htmlContent.includes(blockP)) {{
+                        htmlContent = htmlContent.replace(blockP, `<div class="katex-display">${{item.html}}</div>`);
+                    }} else {{
+                        htmlContent = htmlContent.replace(`KATEXBLOCKPH${{index}}ENDPH`, `<div class="katex-display">${{item.html}}</div>`);
+                    }}
                 }} else {{
-                    htmlContent = htmlContent.replace(`___MATH_BLOCK_${{index}}___`, `<div class="katex-display">${{renderedHtml}}</div>`);
+                    htmlContent = htmlContent.replace(`KATEXINLINEPH${{index}}ENDPH`, item.html);
                 }}
-                htmlContent = htmlContent.replace(`___MATH_INLINE_${{index}}___`, renderedHtml);
             }});
 
             return htmlContent;
@@ -293,7 +296,8 @@ def extract_with_gemini_vision(uploaded_file, api_key):
             "이 파일(이미지 또는 PDF 문서)에 포함된 모든 글자와 수학 문제, 수식을 정확하게 읽어서 마크다운 형태로 추출해 줘.\n"
             "규칙:\n"
             "1. 모든 수학 기호, 분수, 루트, 지수, 변수 등은 LaTeX 수식 태그인 `$수식$` (문장 속 수식) 또는 `$$수식$$` (독립 수식) 형태로 정확하게 변환해 줘.\n"
-            "2. 보기 선택지(①, ②, ③, ④, ⑤ 등)의 수식이나 숫자도 `$1$`, `$2$` 처럼 `$수식$` 태그로 일관되게 감싸 줘.\n"
+            "2. 보기 선택지(①, ②, ③, ④, ⑤ 등)는 다음과 같이 수식 태그로 정확히 감싸고, 선지 간 띄어쓰기를 넉넉하게 배치해 줘:\n"
+            "   ① \\(1\\)  ② \\(2\\)  ③ \\(3\\)  ④ \\(4\\)  ⑤ \\(5\\)\n"
             "3. 문단 번호(1., 2. 등)나 문제는 정갈하게 줄바꿈하여 가독성 높게 배치해 줘.\n"
             "4. 불필요한 서문이나 인사말 없이 오직 추출 및 정돈된 마크다운 내용만 출력해 줘."
         )
