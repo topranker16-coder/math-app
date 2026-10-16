@@ -20,7 +20,7 @@ st.set_page_config(
 )
 
 st.title("📚 스캔북 OCR & AI 대화 문서 정돈 변환기")
-st.write("Gemini Vision AI를 연결하여 평가원/수능 특수 수식, 스캔 이미지, **PDF 파일**을 **깨짐 없이 완벽한 라텍스(\$) 수식**으로 정돈합니다.")
+st.write(r"Gemini Vision AI를 연결하여 평가원/수능 특수 수식, 스캔 이미지, **PDF 파일**을 **깨짐 없이 완벽한 라텍스(\$) 수식**으로 정돈합니다.")
 
 # 사이드바 API 키 설정
 with st.sidebar:
@@ -38,7 +38,7 @@ tab1, tab2 = st.tabs(["📋 1. 대화/텍스트 직접 붙여넣기", "🤖 2. �
 def preprocess_text(text):
     if not text:
         return ""
-    # 백슬래시 수식을 정석 라텍스 수식(\$\$)으로 자동 변환
+    # \\( \\) 및 \\[ \\] 형태를 \$ \$ 및 \\[ \\] 로 통일하여 처리 안정성 향상
     text = re.sub(r'\\\((.*?)\\\)', r'\\(\1\\)', text)
     text = re.sub(r'\\\[(.*?)\\\]', r'\\[\1\\]', text)
     # 3줄 이상 연속된 줄바꿈을 2줄로 정리
@@ -52,16 +52,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
     <meta charset="utf-8">
     <title>정돈된 문서</title>
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.8/dist/katex.min.css">
-    <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.8/dist/katex.min.js"></script>
-    <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.8/dist/contrib/auto-render.min.js"
-            onload="renderMathInElement(document.getElementById('content'), {{
-                delimiters: [
-                    {{left: '\\[', right: '\\]', display: true}},
-                    {{left: '\\(', right: '\\)', display: false}},
-                    {{left: '\\[', right: '\\]', display: true}},
-                    {{left: '\\(', right: '\\)', display: false}}
-                ]
-            }});"></script>
+    <script src="https://cdn.jsdelivr.net/npm/katex@0.16.8/dist/katex.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
 
     <style>
@@ -147,6 +138,12 @@ HTML_TEMPLATE = """<!DOCTYPE html>
             padding: 0;
         }}
 
+        .katex-display {{
+            margin: 0.8em 0;
+            overflow-x: auto;
+            overflow-y: hidden;
+        }}
+
         @media print {{
             .no-print {{ display: none !important; }}
             body {{
@@ -165,7 +162,52 @@ HTML_TEMPLATE = """<!DOCTYPE html>
 
     <script>
         const rawMarkdown = {markdown_json};
-        document.getElementById('content').innerHTML = marked.parse(rawMarkdown);
+
+        function renderMarkdownWithMath(markdownText) {{
+            if (!markdownText) return '';
+            
+            const mathBlocks = [];
+
+            // 1. 디스플레이 수식 (\\[ ... \\]) 보호 및 미리 KaTeX 렌더링
+            let protectedText = markdownText.replace(/\\$\\$([\\s\\S]+?)\\$\\$/g, (match, math) => {{
+                try {{
+                    const html = katex.renderToString(math.trim(), {{ displayMode: true, throwOnError: false }});
+                    mathBlocks.push(html);
+                    return `\\n\\n___MATH_BLOCK_${{mathBlocks.length - 1}}___\\n\\n`;
+                }} catch (e) {{
+                    return match;
+                }}
+            }});
+
+            // 2. 인라인 수식 (\\( ... \\)) 보호 및 미리 KaTeX 렌더링
+            protectedText = protectedText.replace(/\\$([^\\$\\n]+?)\\$/g, (match, math) => {{
+                try {{
+                    const html = katex.renderToString(math.trim(), {{ displayMode: false, throwOnError: false }});
+                    mathBlocks.push(html);
+                    return `___MATH_INLINE_${{mathBlocks.length - 1}}___`;
+                }} catch (e) {{
+                    return match;
+                }}
+            }});
+
+            // 3. 마크다운 파싱 (수식이 이미 보호되었으므로 _, ^, \\ 등이 절대 깨지지 않음)
+            let htmlContent = marked.parse(protectedText);
+
+            // 4. 렌더링된 KaTeX HTML 복원
+            mathBlocks.forEach((renderedHtml, index) => {{
+                const blockPlaceholder = `<p>___MATH_BLOCK_${{index}}___</p>`;
+                if (htmlContent.includes(blockPlaceholder)) {{
+                    htmlContent = htmlContent.replace(blockPlaceholder, `<div class="katex-display">${{renderedHtml}}</div>`);
+                }} else {{
+                    htmlContent = htmlContent.replace(`___MATH_BLOCK_${{index}}___`, `<div class="katex-display">${{renderedHtml}}</div>`);
+                }}
+                htmlContent = htmlContent.replace(`___MATH_INLINE_${{index}}___`, renderedHtml);
+            }});
+
+            return htmlContent;
+        }}
+
+        document.getElementById('content').innerHTML = renderMarkdownWithMath(rawMarkdown);
     </script>
 </body>
 </html>"""
@@ -197,7 +239,7 @@ with tab1:
         else:
             st.info("왼쪽에 텍스트를 입력하시면 정돈된 미리보기와 PDF 저장 버튼이 나타납니다.")
 
-# Gemini AI로 이미지/PDF 처리하는 함수 (실시간 사용가능 모델 탐색)
+# Gemini AI로 이미지/PDF 처리하는 함수
 def extract_with_gemini_vision(uploaded_file, api_key):
     if not HAS_GENAI:
         return "오류: google-generativeai 라이브러리가 설치되지 않았습니다. requirements.txt를 확인해 주세요."
@@ -250,9 +292,10 @@ def extract_with_gemini_vision(uploaded_file, api_key):
         prompt = (
             "이 파일(이미지 또는 PDF 문서)에 포함된 모든 글자와 수학 문제, 수식을 정확하게 읽어서 마크다운 형태로 추출해 줘.\n"
             "규칙:\n"
-            "1. 모든 수학 기호, 분수, 루트, 지수, 변수 등은 LaTeX 수식 태그인 `$수식$` 또는 `$$수식$$` 형태로 정확하게 변환해 줘.\n"
-            "2. 문단 번호(1., 2. 등)나 선택지((1), (2) 등)는 정갈하게 줄바꿈하여 가독성 높게 배치해 줘.\n"
-            "3. 불필요한 서문이나 인사말 없이 오직 추출 및 정돈된 마크다운 내용만 출력해 줘."
+            "1. 모든 수학 기호, 분수, 루트, 지수, 변수 등은 LaTeX 수식 태그인 `$수식$` (문장 속 수식) 또는 `$$수식$$` (독립 수식) 형태로 정확하게 변환해 줘.\n"
+            "2. 보기 선택지(①, ②, ③, ④, ⑤ 등)의 수식이나 숫자도 `$1$`, `$2$` 처럼 `$수식$` 태그로 일관되게 감싸 줘.\n"
+            "3. 문단 번호(1., 2. 등)나 문제는 정갈하게 줄바꿈하여 가독성 높게 배치해 줘.\n"
+            "4. 불필요한 서문이나 인사말 없이 오직 추출 및 정돈된 마크다운 내용만 출력해 줘."
         )
 
         last_error = None
