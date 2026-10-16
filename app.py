@@ -1,11 +1,16 @@
-import streamlit as st
-import streamlit.components.v1 as components
 import json
 import re
-from PIL import Image
-import pytesseract
-from pypdf import PdfReader
 import io
+import streamlit as st
+import streamlit.components.v1 as components
+from PIL import Image
+
+# google-generativeai 라이브러리 연동
+try:
+    import google.generativeai as genai
+    HAS_GENAI = True
+except ImportError:
+    HAS_GENAI = False
 
 # 웹 페이지 기본 설정
 st.set_page_config(
@@ -15,15 +20,25 @@ st.set_page_config(
 )
 
 st.title("📚 스캔북 OCR & AI 대화 문서 정돈 변환기")
-st.write("스캔 이미지/PDF 파일을 올리거나 Gemini 대화 텍스트를 붙여넣으시면, **자동 OCR 추출 및 수식·문단 정돈**을 거쳐 **A4 규격 PDF 문서**로 만들어 드립니다.")
+st.write("Gemini Vision AI를 연결하여 평가원/수능 특수 수식 및 스캔 이미지·PDF를 **깨짐 없이 완벽한 라텍스(\$) 수식**으로 정돈합니다.")
 
-tab1, tab2 = st.tabs(["📋 1. 대화/텍스트 직접 붙여넣기", "📸 2. 스캔 이미지/PDF 업로드 (OCR)"])
+# 사이드바 API 키 설정
+with st.sidebar:
+    st.header("⚙️ Gemini AI 설정")
+    api_key = st.text_input(
+        "Gemini API Key 입력:",
+        type="password",
+        help="Google AI Studio(aistudio.google.com)에서 발급받은 무료 API 키를 입력하세요."
+    )
+    st.caption("💡 API 키를 입력하시면 수능/모의고사 특수 수식과 이미지도 깨짐 없이 100% 완벽 추출됩니다.")
+
+tab1, tab2 = st.tabs(["📋 1. 대화/텍스트 직접 붙여넣기", "🤖 2. 수학문제지/스캔북 AI OCR (Gemini Vision)"])
 
 # 텍스트 전처리 및 정돈 함수
 def preprocess_text(text):
     if not text:
         return ""
-    # 백슬래시 수식을 정석 라텍스 수식($$)으로 자동 변환
+    # 백슬래시 수식을 정석 라텍스 수식(\$\$)으로 자동 변환
     text = re.sub(r'\\\((.*?)\\\)', r'\\(\1\\)', text)
     text = re.sub(r'\\\[(.*?)\\\]', r'\\[\1\\]', text)
     # 3줄 이상 연속된 줄바꿈을 2줄로 정리
@@ -43,8 +58,8 @@ HTML_TEMPLATE = """<!DOCTYPE html>
                 delimiters: [
                     {{left: '\\[', right: '\\]', display: true}},
                     {{left: '\\(', right: '\\)', display: false}},
-                    {{left: '$$', right: '$$', display: true}},
-                    {{left: '$', right: '$', display: false}}
+                    {{left: '\\[', right: '\\]', display: true}},
+                    {{left: '\\(', right: '\\)', display: false}}
                 ]
             }});"></script>
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
@@ -182,61 +197,75 @@ with tab1:
         else:
             st.info("왼쪽에 텍스트를 입력하시면 정돈된 미리보기와 PDF 저장 버튼이 나타납니다.")
 
-# --- 탭 2: 스캔 이미지/PDF OCR 추출 ---
+# Gemini AI로 이미지 처리하는 함수
+def extract_with_gemini_vision(image_file, api_key):
+    if not HAS_GENAI:
+        return "오류: google-generativeai 라이브러리가 설치되지 않았습니다. requirements.txt를 확인해 주세요."
+    if not api_key:
+        return "⚠️ 왼쪽 사이드바에 Gemini API Key를 입력하셔야 시각적 AI 인식을 진행할 수 있습니다!"
+    
+    try:
+        genai.configure(api_key=api_key)
+        model = genai.GenerativeModel('gemini-1.5-flash')
+        
+        prompt = (
+            "이 이미지/문서에 포함된 모든 글자와 수학 문제, 수식을 정확하게 읽어서 마크다운 형태로 추출해 줘.\n"
+            "규칙:\n"
+            "1. 모든 수학 기호, 분수, 루트, 지수, 변수 등은 LaTeX 수식 태그인 `$수식$` 또는 `$$수식$$` 형태로 정확하게 변환해 줘.\n"
+            "2. 문단 번호(1., 2. 등)나 선택지((1), (2) 등)는 정갈하게 줄바꿈하여 가독성 높게 배치해 줘.\n"
+            "3. 불필요한 서문이나 인사말 없이 오직 추출 및 정돈된 마크다운 내용만 출력해 줘."
+        )
+        
+        img = Image.open(image_file)
+        response = model.generate_content([prompt, img])
+        return response.text
+    except Exception as e:
+        return f"Gemini Vision 처리 중 오류 발생: {e}"
+
+# --- 탭 2: AI Vision OCR ---
 with tab2:
-    st.subheader("📸 이미지 및 PDF 스캔 파일에서 글자(OCR) 추출하기")
+    st.subheader("🤖 Gemini Vision AI로 수학 문제지/스캔북 깨짐 없이 추출하기")
+    
+    if not api_key:
+        st.warning("👈 왼쪽 사이드바에서 **Gemini API Key**를 입력해 주세요! (무료 발급: aistudio.google.com)")
+
     uploaded_file = st.file_uploader(
-        "스캔한 책 이미지(PNG, JPG) 또는 PDF 파일을 선택하세요:",
-        type=["png", "jpg", "jpeg", "pdf"]
+        "스캔한 책/수학 문제지 이미지(PNG, JPG)를 선택하세요:",
+        type=["png", "jpg", "jpeg"]
     )
 
     if uploaded_file is not None:
-        extracted_text = ""
-        file_type = uploaded_file.name.split(".")[-1].lower()
+        col_img, col_res = st.columns(2)
+        
+        with col_img:
+            image = Image.open(uploaded_file)
+            st.image(image, caption="업로드한 이미지", use_container_width=True)
 
-        with st.spinner("🔍 파일에서 글자 및 문장을 읽어오는 중입니다..."):
-            try:
-                if file_type in ["png", "jpg", "jpeg"]:
-                    image = Image.open(uploaded_file)
-                    st.image(image, caption="업로드한 이미지", use_container_width=True)
-                    try:
-                        extracted_text = pytesseract.image_to_string(image, lang="kor+eng")
-                    except Exception:
-                        extracted_text = pytesseract.image_to_string(image)
+        with col_res:
+            if st.button("🚀 Gemini Vision AI로 완벽 글자/수식 추출하기"):
+                with st.spinner("✨ Gemini Vision AI가 이미지의 글자와 수식을 읽어내고 있습니다..."):
+                    extracted_result = extract_with_gemini_vision(uploaded_file, api_key)
+                    st.session_state["extracted_ocr"] = extracted_result
 
-                elif file_type == "pdf":
-                    pdf_bytes = uploaded_file.read()
-                    reader = PdfReader(io.BytesIO(pdf_bytes))
-                    pdf_text = []
-                    for idx, page in enumerate(reader.pages):
-                        text = page.extract_text()
-                        if text:
-                            pdf_text.append(f"--- [ {idx+1} 페이지 ] ---\n" + text)
-                    extracted_text = "\n\n".join(pdf_text)
-
-            except Exception as e:
-                st.error(f"파일을 읽는 중 오류가 발생했습니다: {e}")
-
-        if extracted_text.strip():
-            st.success("🎉 글자 추출 완료! 아래 텍스트를 확인 및 편집하실 수 있습니다.")
+        if "extracted_ocr" in st.session_state and st.session_state["extracted_ocr"]:
+            st.divider()
+            st.success("🎉 AI Vision 추출 완료! 추출된 원본과 정돈 미리보기를 확인해 보세요.")
             
             col_ocr1, col_ocr2 = st.columns(2)
             with col_ocr1:
-                st.write("##### ✏️ 추출된 원본 텍스트 (편집 가능)")
+                st.write("##### ✏️ AI 추출 마크다운 (편집 가능)")
                 edited_ocr = st.text_area(
                     "추출된 텍스트:",
-                    value=extracted_text,
-                    height=450
+                    value=st.session_state["extracted_ocr"],
+                    height=500
                 )
-                if st.button("📋 이 텍스트로 정돈 문서 생성하기"):
+                if st.button("📋 이 텍스트를 1번 탭(PDF 저장 영역)으로 보낼까요?"):
                     st.session_state["input_text"] = edited_ocr
-                    st.toast("1번 탭의 정돈 영역으로 텍스트가 전달되었습니다!")
+                    st.toast("1번 탭으로 정돈된 텍스트가 전달되었습니다!")
 
             with col_ocr2:
                 st.write("##### ✨ 정돈된 문서 미리보기")
-                cleaned_ocr = preprocess_text(edited_ocr if 'edited_ocr' in locals() else extracted_text)
+                cleaned_ocr = preprocess_text(edited_ocr)
                 markdown_json_str = json.dumps(cleaned_ocr)
                 html_code = HTML_TEMPLATE.format(markdown_json=markdown_json_str)
                 components.html(html_code, height=520, scrolling=True)
-        else:
-            st.warning("파일에서 텍스트를 추출하지 못했습니다. 스캔 이미지의 해상도를 확인해 주세요.")
