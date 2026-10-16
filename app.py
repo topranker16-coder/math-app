@@ -1,11 +1,17 @@
 import streamlit as st
 import streamlit.components.v1 as components
 
-st.set_page_config(page_title="LaTeX 수식 정돈 & PDF 생성기", page_icon="📐", layout="wide")
+# 웹 페이지 기본 설정
+st.set_page_config(
+    page_title="LaTeX 수식 정돈 & PDF 생성기", page_icon="📐", layout="wide"
+)
 
 st.title("📐 LaTeX 수식 자동 정돈 & PDF 내보내기 앱")
-st.write("Gemini 대화에서 복사한 텍스트를 붙여넣으시면, 정석 수식으로 정돈되고 PDF로 바로 다운로드할 수 있습니다.")
+st.write(
+    "Gemini 대화에서 복사한 텍스트를 붙여넣으시면, 정석 수식으로 정돈되고 PDF로 바로 다운로드할 수 있습니다."
+)
 
+# 좌우 2열 분할 레이아웃
 col1, col2 = st.columns(2)
 
 with col1:
@@ -19,6 +25,8 @@ with col1:
 \\[x = \frac{-b \pm \sqrt{b^2 - 4ac}}{2a}\\]""",
     )
 
+# KaTeX 수식 렌더링 및 PDF 인쇄용 HTML 템플릿
+# \\(...\\), \\[...\\], \\(...\\), \\[...\\] 방식을 모두 자동으로 감지하도록 설정 업데이트
 HTML_TEMPLATE = """
 <!DOCTYPE html>
 <html>
@@ -27,7 +35,14 @@ HTML_TEMPLATE = """
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.8/dist/katex.min.css">
     <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.8/dist/katex.min.js"></script>
     <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.8/dist/contrib/auto-render.min.js"
-            onload="renderMathInElement(document.body, {{delimiters: [{{left: '\\[', right: '\\]', display: true}}, {{left: '\\(', right: '\\)', display: false}}]}});"></script>
+            onload="renderMathInElement(document.body, {{
+                delimiters: [
+                    {{left: '\\[', right: '\\]', display: true}},
+                    {{left: '\\(', right: '\\)', display: false}},
+                    {{left: '\\\\[', right: '\\\\]', display: true}},
+                    {{left: '\\\\(', right: '\\\\)', display: false}}
+                ]
+            }});"></script>
     <style>
         body {{
             font-family: 'Noto Sans KR', 'Malgun Gothic', sans-serif;
@@ -49,14 +64,18 @@ HTML_TEMPLATE = """
 with col2:
     st.subheader("✨ 수식 미리보기 & PDF 다운로드")
     if user_input:
+        # 1. Streamlit 화면 상 실시간 미리보기
         st.markdown(user_input)
+
         st.divider()
 
+        # 2. PDF 출력을 위한 HTML 변환
         formatted_html = user_input.replace("\n", "<br>")
         html_code = HTML_TEMPLATE.format(content=formatted_html)
 
         st.write("##### 📥 다운로드 옵션")
 
+        # [옵션 A] 원클릭 고화질 PDF 저장/인쇄 버튼
         components.html(
             f"""
             <script>
@@ -85,6 +104,7 @@ with col2:
             height=65,
         )
 
+        # [옵션 B] HTML 문서 파일 직접 다운로드 버튼
         st.download_button(
             label="💾 웹 문서 파일(.html)로 소장하기",
             data=html_code,
@@ -93,4 +113,6 @@ with col2:
             use_container_width=True,
         )
     else:
-        st.info("왼쪽에 텍스트를 입력하면 수식 변환 미리보기와 PDF 다운로드 버튼이 활성화됩니다.")
+        st.info(
+            "왼쪽에 텍스트를 입력하면 수식 변환 미리보기와 PDF 다운로드 버튼이 활성화됩니다."
+        )
