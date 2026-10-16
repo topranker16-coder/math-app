@@ -20,7 +20,7 @@ st.set_page_config(
 )
 
 st.title("📚 스캔북 OCR & AI 대화 문서 정돈 변환기")
-st.write("Gemini Vision AI를 연결하여 평가원/수능 특수 수식 및 스캔 이미지·PDF를 **깨짐 없이 완벽한 라텍스(\$) 수식**으로 정돈합니다.")
+st.write("Gemini Vision AI를 연결하여 평가원/수능 특수 수식, 스캔 이미지, **PDF 파일**을 **깨짐 없이 완벽한 라텍스(\$) 수식**으로 정돈합니다.")
 
 # 사이드바 API 키 설정
 with st.sidebar:
@@ -30,9 +30,9 @@ with st.sidebar:
         type="password",
         help="Google AI Studio(aistudio.google.com)에서 발급받은 무료 API 키를 입력하세요."
     )
-    st.caption("💡 API 키를 입력하시면 수능/모의고사 특수 수식과 이미지도 깨짐 없이 100% 완벽 추출됩니다.")
+    st.caption("💡 API 키를 입력하시면 PDF 및 수능/모의고사 특수 수식도 깨짐 없이 100% 완벽 추출됩니다.")
 
-tab1, tab2 = st.tabs(["📋 1. 대화/텍스트 직접 붙여넣기", "🤖 2. 수학문제지/스캔북 AI OCR (Gemini Vision)"])
+tab1, tab2 = st.tabs(["📋 1. 대화/텍스트 직접 붙여넣기", "🤖 2. 수학문제지/PDF/스캔북 AI OCR (Gemini Vision)"])
 
 # 텍스트 전처리 및 정돈 함수
 def preprocess_text(text):
@@ -197,59 +197,69 @@ with tab1:
         else:
             st.info("왼쪽에 텍스트를 입력하시면 정돈된 미리보기와 PDF 저장 버튼이 나타납니다.")
 
-# Gemini AI로 이미지 처리하는 함수
-def extract_with_gemini_vision(image_file, api_key):
+# Gemini AI로 이미지/PDF 처리하는 함수
+def extract_with_gemini_vision(uploaded_file, api_key):
     if not HAS_GENAI:
         return "오류: google-generativeai 라이브러리가 설치되지 않았습니다. requirements.txt를 확인해 주세요."
     if not api_key:
-        return "⚠️ 왼쪽 사이드바에 Gemini API Key를 입력하셔야 시각적 AI 인식을 진행할 수 있습니다!"
+        return "⚠️ 왼쪽 사이드바에 Gemini API Key를 입력하셔야 진행할 수 있습니다!"
     
     try:
         genai.configure(api_key=api_key)
         model = genai.GenerativeModel('gemini-1.5-flash')
         
         prompt = (
-            "이 이미지/문서에 포함된 모든 글자와 수학 문제, 수식을 정확하게 읽어서 마크다운 형태로 추출해 줘.\n"
+            "이 파일(이미지 또는 PDF 문서)에 포함된 모든 글자와 수학 문제, 수식을 정확하게 읽어서 마크다운 형태로 추출해 줘.\n"
             "규칙:\n"
             "1. 모든 수학 기호, 분수, 루트, 지수, 변수 등은 LaTeX 수식 태그인 `$수식$` 또는 `$$수식$$` 형태로 정확하게 변환해 줘.\n"
             "2. 문단 번호(1., 2. 등)나 선택지((1), (2) 등)는 정갈하게 줄바꿈하여 가독성 높게 배치해 줘.\n"
             "3. 불필요한 서문이나 인사말 없이 오직 추출 및 정돈된 마크다운 내용만 출력해 줘."
         )
         
-        img = Image.open(image_file)
-        response = model.generate_content([prompt, img])
+        file_bytes = uploaded_file.getvalue()
+        file_type = uploaded_file.name.split(".")[-1].lower()
+        
+        if file_type == "pdf":
+            content_part = {
+                "mime_type": "application/pdf",
+                "data": file_bytes
+            }
+        else:
+            mime_map = {"png": "image/png", "jpg": "image/jpeg", "jpeg": "image/jpeg"}
+            content_part = {
+                "mime_type": mime_map.get(file_type, "image/jpeg"),
+                "data": file_bytes
+            }
+            
+        response = model.generate_content([prompt, content_part])
         return response.text
     except Exception as e:
         return f"Gemini Vision 처리 중 오류 발생: {e}"
 
-# --- 탭 2: AI Vision OCR ---
+# --- 탭 2: AI Vision OCR (PDF & 이미지 지원) ---
 with tab2:
-    st.subheader("🤖 Gemini Vision AI로 수학 문제지/스캔북 깨짐 없이 추출하기")
+    st.subheader("🤖 Gemini Vision AI로 수학 문제지 PDF/이미지 깨짐 없이 추출하기")
     
     if not api_key:
         st.warning("👈 왼쪽 사이드바에서 **Gemini API Key**를 입력해 주세요! (무료 발급: aistudio.google.com)")
 
     uploaded_file = st.file_uploader(
-        "스캔한 책/수학 문제지 이미지(PNG, JPG)를 선택하세요:",
-        type=["png", "jpg", "jpeg"]
+        "스캔한 책/수학 문제지 파일(PDF, PNG, JPG)을 선택하세요:",
+        type=["pdf", "png", "jpg", "jpeg"]
     )
 
     if uploaded_file is not None:
-        col_img, col_res = st.columns(2)
+        file_ext = uploaded_file.name.split(".")[-1].lower()
+        st.info(f"📄 업로드된 파일: **{uploaded_file.name}**")
         
-        with col_img:
-            image = Image.open(uploaded_file)
-            st.image(image, caption="업로드한 이미지", use_container_width=True)
-
-        with col_res:
-            if st.button("🚀 Gemini Vision AI로 완벽 글자/수식 추출하기"):
-                with st.spinner("✨ Gemini Vision AI가 이미지의 글자와 수식을 읽어내고 있습니다..."):
-                    extracted_result = extract_with_gemini_vision(uploaded_file, api_key)
-                    st.session_state["extracted_ocr"] = extracted_result
+        if st.button("🚀 Gemini Vision AI로 PDF/이미지 글자 및 수식 추출하기"):
+            with st.spinner("✨ Gemini AI가 PDF/이미지의 글자와 수식을 읽어내고 있습니다..."):
+                extracted_result = extract_with_gemini_vision(uploaded_file, api_key)
+                st.session_state["extracted_ocr"] = extracted_result
 
         if "extracted_ocr" in st.session_state and st.session_state["extracted_ocr"]:
             st.divider()
-            st.success("🎉 AI Vision 추출 완료! 추출된 원본과 정돈 미리보기를 확인해 보세요.")
+            st.success("🎉 AI 추출 완료! 추출된 마크다운 원본과 정돈 미리보기를 확인해 보세요.")
             
             col_ocr1, col_ocr2 = st.columns(2)
             with col_ocr1:
