@@ -197,7 +197,7 @@ with tab1:
         else:
             st.info("왼쪽에 텍스트를 입력하시면 정돈된 미리보기와 PDF 저장 버튼이 나타납니다.")
 
-# Gemini AI로 이미지/PDF 처리하는 함수
+# Gemini AI로 이미지/PDF 처리하는 함수 (자동 모델 탐색 지원)
 def extract_with_gemini_vision(uploaded_file, api_key):
     if not HAS_GENAI:
         return "오류: google-generativeai 라이브러리가 설치되지 않았습니다. requirements.txt를 확인해 주세요."
@@ -206,15 +206,9 @@ def extract_with_gemini_vision(uploaded_file, api_key):
     
     try:
         genai.configure(api_key=api_key)
-        model = genai.GenerativeModel('gemini-1.5-flash')
         
-        prompt = (
-            "이 파일(이미지 또는 PDF 문서)에 포함된 모든 글자와 수학 문제, 수식을 정확하게 읽어서 마크다운 형태로 추출해 줘.\n"
-            "규칙:\n"
-            "1. 모든 수학 기호, 분수, 루트, 지수, 변수 등은 LaTeX 수식 태그인 `$수식$` 또는 `$$수식$$` 형태로 정확하게 변환해 줘.\n"
-            "2. 문단 번호(1., 2. 등)나 선택지((1), (2) 등)는 정갈하게 줄바꿈하여 가독성 높게 배치해 줘.\n"
-            "3. 불필요한 서문이나 인사말 없이 오직 추출 및 정돈된 마크다운 내용만 출력해 줘."
-        )
+        # 모델 자동 순회 (404 에러 방지용)
+        candidate_models = ['gemini-2.0-flash', 'gemini-1.5-flash', 'gemini-2.5-flash', 'gemini-1.5-pro']
         
         file_bytes = uploaded_file.getvalue()
         file_type = uploaded_file.name.split(".")[-1].lower()
@@ -230,9 +224,26 @@ def extract_with_gemini_vision(uploaded_file, api_key):
                 "mime_type": mime_map.get(file_type, "image/jpeg"),
                 "data": file_bytes
             }
-            
-        response = model.generate_content([prompt, content_part])
-        return response.text
+
+        prompt = (
+            "이 파일(이미지 또는 PDF 문서)에 포함된 모든 글자와 수학 문제, 수식을 정확하게 읽어서 마크다운 형태로 추출해 줘.\n"
+            "규칙:\n"
+            "1. 모든 수학 기호, 분수, 루트, 지수, 변수 등은 LaTeX 수식 태그인 `$수식$` 또는 `$$수식$$` 형태로 정확하게 변환해 줘.\n"
+            "2. 문단 번호(1., 2. 등)나 선택지((1), (2) 등)는 정갈하게 줄바꿈하여 가독성 높게 배치해 줘.\n"
+            "3. 불필요한 서문이나 인사말 없이 오직 추출 및 정돈된 마크다운 내용만 출력해 줘."
+        )
+
+        last_error = None
+        for model_name in candidate_models:
+            try:
+                model = genai.GenerativeModel(model_name)
+                response = model.generate_content([prompt, content_part])
+                return response.text
+            except Exception as e:
+                last_error = e
+                continue
+                
+        return f"Gemini Vision 처리 중 오류 발생: {last_error}"
     except Exception as e:
         return f"Gemini Vision 처리 중 오류 발생: {e}"
 
@@ -249,7 +260,6 @@ with tab2:
     )
 
     if uploaded_file is not None:
-        file_ext = uploaded_file.name.split(".")[-1].lower()
         st.info(f"📄 업로드된 파일: **{uploaded_file.name}**")
         
         if st.button("🚀 Gemini Vision AI로 PDF/이미지 글자 및 수식 추출하기"):
