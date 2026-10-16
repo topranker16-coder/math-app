@@ -197,7 +197,7 @@ with tab1:
         else:
             st.info("왼쪽에 텍스트를 입력하시면 정돈된 미리보기와 PDF 저장 버튼이 나타납니다.")
 
-# Gemini AI로 이미지/PDF 처리하는 함수 (자동 모델 탐색 지원)
+# Gemini AI로 이미지/PDF 처리하는 함수 (실시간 사용가능 모델 탐색)
 def extract_with_gemini_vision(uploaded_file, api_key):
     if not HAS_GENAI:
         return "오류: google-generativeai 라이브러리가 설치되지 않았습니다. requirements.txt를 확인해 주세요."
@@ -207,9 +207,31 @@ def extract_with_gemini_vision(uploaded_file, api_key):
     try:
         genai.configure(api_key=api_key)
         
-        # 모델 자동 순회 (404 에러 방지용)
-        candidate_models = ['gemini-2.0-flash', 'gemini-1.5-flash', 'gemini-2.5-flash', 'gemini-1.5-pro']
+        # 1. API 키로 사용 가능한 모델 목록을 동적으로 가져옵니다.
+        candidate_models = []
+        try:
+            for m in genai.list_models():
+                if 'generateContent' in m.supported_generation_methods:
+                    if 'flash' in m.name:
+                        candidate_models.insert(0, m.name)
+                    else:
+                        candidate_models.append(m.name)
+        except Exception:
+            pass
+            
+        # 예비 모델 이름 지정
+        fallback_models = [
+            'models/gemini-1.5-flash-latest',
+            'models/gemini-1.5-flash',
+            'models/gemini-2.0-flash-exp',
+            'gemini-1.5-flash',
+            'gemini-1.5-pro'
+        ]
         
+        for fb in fallback_models:
+            if fb not in candidate_models:
+                candidate_models.append(fb)
+
         file_bytes = uploaded_file.getvalue()
         file_type = uploaded_file.name.split(".")[-1].lower()
         
@@ -234,9 +256,9 @@ def extract_with_gemini_vision(uploaded_file, api_key):
         )
 
         last_error = None
-        for model_name in candidate_models:
+        for m_name in candidate_models:
             try:
-                model = genai.GenerativeModel(model_name)
+                model = genai.GenerativeModel(m_name)
                 response = model.generate_content([prompt, content_part])
                 return response.text
             except Exception as e:
