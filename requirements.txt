@@ -2,3 +2,4 @@ streamlit
 pytesseract
 pypdf
 Pillow
+google-generativeai
