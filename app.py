@@ -5,12 +5,14 @@ import streamlit.components.v1 as components
 
 # 웹 페이지 기본 설정
 st.set_page_config(
-    page_title="AI 대화 원클릭 PDF 변환기", page_icon="📄", layout="wide"
+    page_title="AI 대화 깔끔 문서 & PDF 변환기",
+    page_icon="📄",
+    layout="wide",
 )
 
-st.title("📄 AI 대화 원클릭 PDF 직접 저장기")
+st.title("📄 AI 대화 자동 정돈 & PDF 저장기")
 st.write(
-    "Gemini 대화창 하단의 **[복사] 버튼**을 눌러 붙여넣으시면, 수식과 글자 배열을 완벽하게 정돈하여 **PDF 파일로 즉시 다운로드**합니다."
+    "Gemini 대화창 하단의 **[복사] 버튼**을 눌러 붙여넣으시면, 수식과 글자 배열을 완벽하게 정돈하여 **PDF 파일로 저장**할 수 있습니다."
 )
 
 col1, col2 = st.columns(2)
@@ -36,47 +38,44 @@ def preprocess_text(text):
 
 cleaned_text = preprocess_text(raw_text)
 
-# html2pdf 라이브러리를 활용한 PDF 직접 다운로드 템플릿
+# 안전하고 깨끗한 PDF 출력을 위한 HTML/CSS 템플릿
 HTML_TEMPLATE = """
 <!DOCTYPE html>
 <html>
 <head>
     <meta charset="utf-8">
+    <title>AI 대화 정돈 문서</title>
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.8/dist/katex.min.css">
     <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.8/dist/katex.min.js"></script>
     <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.8/dist/contrib/auto-render.min.js"
-            onload="renderMathInElement(document.getElementById('pdf-area'), {{
+            onload="renderMathInElement(document.body, {{
                 delimiters: [
                     {{left: '\\[', right: '\\]', display: true}},
                     {{left: '\\(', right: '\\)', display: false}},
-                    {{left: '$$', right: '$$', display: true}},
-                    {{left: '$', right: '$', display: false}}
+                    {{left: '\\[', right: '\\]', display: true}},
+                    {{left: '\\(', right: '\\)', display: false}}
                 ]
             }});"></script>
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
-    <!-- 원클릭 PDF 직접 변환 라이브러리 -->
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
 
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;700&display=swap');
         
         body {{
             font-family: 'Noto Sans KR', 'Malgun Gothic', sans-serif;
-            padding: 10px;
-            color: #111;
-        }}
-
-        #pdf-area {{
             padding: 30px;
-            background: #ffffff;
+            color: #111111;
             line-height: 1.8;
             font-size: 15px;
+            max-width: 800px;
+            margin: 0 auto;
         }}
 
         h1, h2, h3, h4 {{
             color: #1a202c;
             margin-top: 1.2em;
             margin-bottom: 0.5em;
+            font-weight: 700;
         }}
         h1 {{ font-size: 22px; border-bottom: 2px solid #cbd5e0; padding-bottom: 6px; }}
         h2 {{ font-size: 18px; border-bottom: 1px solid #e2e8f0; padding-bottom: 4px; }}
@@ -100,62 +99,65 @@ HTML_TEMPLATE = """
             font-size: 13px;
         }}
 
-        .pdf-btn {{
-            width: 100%;
-            background-color: #ff4b4b;
-            color: white;
-            border: none;
-            padding: 14px;
-            border-radius: 8px;
-            font-weight: bold;
-            font-size: 16px;
-            cursor: pointer;
-            box-shadow: 0 2px 5px rgba(0,0,0,0.15);
-        }}
-        .pdf-btn:hover {{
-            background-color: #e03e3e;
+        @media print {{
+            body {{
+                padding: 0;
+                margin: 0;
+            }}
         }}
     </style>
 </head>
 <body>
-    <div style="margin-bottom: 15px;">
-        <button class="pdf-btn" onclick="generatePDF()">📥 클릭 시 즉시 PDF 파일 다운로드 (.pdf)</button>
-    </div>
-
-    <div id="pdf-area"></div>
+    <div id="content"></div>
 
     <script>
         const rawMarkdown = {markdown_json};
-        document.getElementById('pdf-area').innerHTML = marked.parse(rawMarkdown);
-
-        function generatePDF() {{
-            const element = document.getElementById('pdf-area');
-            const opt = {{
-                margin:       10,
-                filename:     'AI_대화_정돈_문서.pdf',
-                image:        {{ type: 'jpeg', quality: 0.98 }},
-                html2canvas:  {{ scale: 2, useCORS: true }},
-                jsPDF:        {{ unit: 'mm', format: 'a4', orientation: 'portrait' }}
-            }};
-
-            html2pdf().set(opt).from(element).save();
-        }}
+        document.getElementById('content').innerHTML = marked.parse(rawMarkdown);
     </script>
 </body>
 </html>
 """
 
 with col2:
-    st.subheader("✨ 정돈된 문서 미리보기 & PDF 원클릭 저장")
+    st.subheader("✨ 정돈된 문서 미리보기 & PDF 저장")
     if raw_text:
+        # 1. Streamlit 내 마크다운 미리보기
         st.markdown(cleaned_text)
         st.divider()
 
         markdown_json_str = json.dumps(cleaned_text)
         html_code = HTML_TEMPLATE.format(markdown_json=markdown_json_str)
 
-        components.html(html_code, height=800, scrolling=True)
+        # 2. 보안 경고 없이 깔끔하게 PDF 저장창을 띄우는 원클릭 버튼
+        components.html(
+            f"""
+            <script>
+            function saveAsPDF() {{
+                var pWin = window.open('', '_blank');
+                pWin.document.write(`{html_code}`);
+                pWin.document.close();
+                setTimeout(function() {{
+                    pWin.focus();
+                    pWin.print();
+                }}, 500);
+            }}
+            </script>
+            <button onclick="saveAsPDF()" style="
+                width: 100%;
+                background-color: #2b6cb0;
+                color: white;
+                border: none;
+                padding: 14px;
+                border-radius: 8px;
+                font-weight: bold;
+                font-size: 16px;
+                cursor: pointer;
+                box-shadow: 0 2px 5px rgba(0,0,0,0.15);">
+                📄 PDF 문서로 저장하기 (보안 경고 없음)
+            </button>
+            """,
+            height=65,
+        )
     else:
         st.info(
-            "왼쪽 상자에 Gemini 대화의 [복사] 버튼을 누른 텍스트를 붙여넣으시면, PDF로 바로 저장할 수 있는 버튼이 나타납니다."
-        )
+            "왼쪽 상자에 Gemini 대화의 [복사] 버튼을 누른 텍스트를 붙여넣으시면, PDF 저장 버튼이 나타납니다."
