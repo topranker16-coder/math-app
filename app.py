@@ -4,6 +4,13 @@ import re
 import streamlit as st
 import streamlit.components.v1 as components
 
+# python-docx 라이브러리 체크
+try:
+    import docx
+    HAS_DOCX = True
+except ImportError:
+    HAS_DOCX = False
+
 # 웹 페이지 기본 설정
 st.set_page_config(
     page_title="수학 수식 문서 정돈 & PDF 변환기",
@@ -12,7 +19,7 @@ st.set_page_config(
 )
 
 st.title("📚 수학 수식 문서 정돈 & PDF 변환기")
-st.write(r"워드에서 복사해온 텍스트와 수학 수식(\$, $$)을 깔끔하게 정돈하고 웹 화면 및 PDF로 출력합니다.")
+st.write(r"워드(.docx) 파일을 업로드하거나 텍스트를 붙여넣어 수식($...$)을 깔끔하게 정돈하고 PDF로 출력합니다.")
 
 # 텍스트 전처리 및 정돈 함수
 def preprocess_text(text):
@@ -198,12 +205,27 @@ if "input_text" not in st.session_state:
 col1, col2 = st.columns(2)
 
 with col1:
-    st.subheader("📥 워드(Word) 텍스트 붙여넣기")
+    st.subheader("📥 워드(.docx) 파일 업로드")
+    
+    if not HAS_DOCX:
+        st.error("⚠️ `python-docx` 라이브러리가 없습니다. 터미널에 `pip install python-docx`를 입력해 주세요.")
+
+    uploaded_docx = st.file_uploader("수학 문제지 워드 파일을 선택하세요:", type=["docx"])
+    
+    if uploaded_docx is not None and HAS_DOCX:
+        try:
+            doc = docx.Document(uploaded_docx)
+            extracted_docx_text = "\n".join([para.text for para in doc.paragraphs])
+            st.session_state["input_text"] = extracted_docx_text
+            st.success("🎉 워드 파일 내용을 성공적으로 불러왔습니다!")
+        except Exception as e:
+            st.error(f"워드 파일 읽기 오류: {e}")
+
     pasted_text = st.text_area(
-        "변환할 내용을 여기에 붙여넣으세요:",
+        "불러온 내용 수정 및 직접 편집:",
         value=st.session_state["input_text"],
-        height=600,
-        placeholder="워드 문서 내용을 복사해서(Ctrl+C) 여기에 붙여넣으세요(Ctrl+V)."
+        height=500,
+        placeholder="워드 파일을 올리면 여기에 텍스트가 자동으로 채워집니다."
     )
     st.session_state["input_text"] = pasted_text
 
@@ -215,4 +237,4 @@ with col2:
         html_code = HTML_TEMPLATE.format(markdown_json=markdown_json_str)
         components.html(html_code, height=650, scrolling=True)
     else:
-        st.info("왼쪽 칸에 워드 내용을 붙여넣으시면, 오른쪽에 수식이 예쁘게 정돈된 미리보기와 PDF 저장 버튼이 나타납니다.")
+        st.info("왼쪽 칸에 워드 파일을 업로드하시면, 오른쪽에 수식이 예쁘게 정돈된 미리보기와 PDF 저장 버튼이 나타납니다.")
