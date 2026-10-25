@@ -154,14 +154,14 @@ HTML_TEMPLATE = """<!DOCTYPE html>
 
             const mathStore = [];
             
-            // 1. 블록 수식 ($$...$$) 임시 보호
+            // 1. 블록 수식 ($$ ... $$) 임시 보호
             let processed = text.replace(/\\$\\$([\\s\\S]+?)\\$\\$/g, function(match, math) {{
                 const id = mathStore.length;
                 mathStore.push({{ math: math.trim(), display: true }});
                 return "@@BLOCK_" + id + "@@";
             }});
 
-            // 2. 인라인 수식 ($...$) 임시 보호
+            // 2. 인라인 수식 ($ ... $) 임시 보호
             processed = processed.replace(/\\$([^\\$\\n]+?)\\$/g, function(match, math) {{
                 const id = mathStore.length;
                 mathStore.push({{ math: math.trim(), display: false }});
@@ -222,4 +222,23 @@ with col1:
             
             st.session_state["input_text"] = extracted_docx_text
             st.success("🎉 워드 파일 내용을 성공적으로 불러왔습니다!")
-        except
+        except Exception as e:
+            st.error(f"워드 파일 읽기 오류: {e}")
+
+    pasted_text = st.text_area(
+        "불러온 내용 수정 및 직접 편집:",
+        value=st.session_state["input_text"],
+        height=500,
+        placeholder="워드 파일을 올리면 여기에 텍스트가 자동으로 채워집니다."
+    )
+    st.session_state["input_text"] = pasted_text
+
+with col2:
+    st.subheader("✨ 수식 미리보기 및 PDF 저장")
+    if st.session_state["input_text"]:
+        cleaned = preprocess_text(st.session_state["input_text"])
+        markdown_json_str = json.dumps(cleaned)
+        html_code = HTML_TEMPLATE.format(markdown_json=markdown_json_str)
+        components.html(html_code, height=650, scrolling=True)
+    else:
+        st.info("왼쪽 칸에 워드 파일을 업로드하시면, 오른쪽에 수식이 예쁘게 정돈된 미리보기와 PDF 저장 버튼이 나타납니다.")
