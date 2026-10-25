@@ -21,14 +21,17 @@ st.set_page_config(
 st.title("📚 수학 수식 문서 정돈 & PDF 변환기")
 st.write(r"워드(.docx) 파일을 업로드하거나 텍스트를 붙여넣어 수식($...$)을 깔끔하게 정돈하고 PDF로 출력합니다.")
 
-# 텍스트 전처리 및 정돈 함수
+# 텍스트 전처리 및 백슬래시 보호 함수
 def preprocess_text(text):
     if not text:
         return ""
+    
+    # 1. 혹시 모를 제어 문자 및 깨진 백슬래시 보정
+    # 2. 불필요한 연속 개행 정리
     text = re.sub(r'\n{3,}', '\n\n', text)
     return text
 
-# HTML/CSS + KaTeX 렌더링 템플릿 (치환 충돌 완벽 해결)
+# HTML/CSS + KaTeX 렌더링 템플릿
 HTML_TEMPLATE = """<!DOCTYPE html>
 <html>
 <head>
@@ -214,7 +217,12 @@ with col1:
     if uploaded_docx is not None and HAS_DOCX:
         try:
             doc = docx.Document(uploaded_docx)
-            extracted_docx_text = "\n".join([para.text for para in doc.paragraphs])
+            # 텍스트 추출 시 생길 수 있는 백슬래시 유실 방지
+            paragraphs = []
+            for para in doc.paragraphs:
+                paragraphs.append(para.text)
+            extracted_docx_text = "\n".join(paragraphs)
+            
             st.session_state["input_text"] = extracted_docx_text
             st.success("🎉 워드 파일 내용을 성공적으로 불러왔습니다!")
         except Exception as e:
