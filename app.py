@@ -1,6 +1,6 @@
+import io
 import json
 import re
-import io
 import streamlit as st
 import streamlit.components.v1 as components
 from PIL import Image
@@ -38,7 +38,7 @@ tab1, tab2 = st.tabs(["📋 1. 대화/텍스트 직접 붙여넣기", "🤖 2. �
 def preprocess_text(text):
     if not text:
         return ""
-    # \\( \\) 및 \\[ \\] 형태를 \$ \$ 및 \\[ \\] 로 통일하여 처리
+    # \\( \\) 및 \\[ \\] 형태 정비
     text = re.sub(r'\\\((.*?)\\\)', r'\\(\1\\)', text)
     text = re.sub(r'\\\[(.*?)\\\]', r'\\[\1\\]', text)
     # 3줄 이상 연속된 줄바꿈을 2줄로 정리
@@ -168,7 +168,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
             
             const mathBlocks = [];
 
-            // 1. 디스플레이 수식 (\\[ ... \\]) 보호 (영문 알파벳 플레이스홀더 사용)
+            // 1. 디스플레이 수식 ($$ ... $$ 또는 \\[ ... \\]) 보호
             let protectedText = markdownText.replace(/\\$\\$([\\s\\S]+?)\\$\\$/g, (match, math) => {{
                 try {{
                     const html = katex.renderToString(math.trim(), {{ displayMode: true, throwOnError: false }});
@@ -179,7 +179,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
                 }}
             }});
 
-            // 2. 인라인 수식 (\\( ... \\)) 보호 (영문 알파벳 플레이스홀더 사용)
+            // 2. 인라인 수식 ($ ... $ 또는 \\( ... \\)) 보호
             protectedText = protectedText.replace(/\\$([^\\$\\n]+?)\\$/g, (match, math) => {{
                 try {{
                     const html = katex.renderToString(math.trim(), {{ displayMode: false, throwOnError: false }});
@@ -190,10 +190,10 @@ HTML_TEMPLATE = """<!DOCTYPE html>
                 }}
             }});
 
-            // 3. 마크다운 파싱 (수식이 변형되지 않고 안전하게 보존됨)
+            // 3. 마크다운 파싱
             let htmlContent = marked.parse(protectedText);
 
-            // 4. 렌더링된 KaTeX HTML 정확히 복원
+            // 4. KaTeX HTML 복원
             mathBlocks.forEach((item, index) => {{
                 if (item.type === 'block') {{
                     const blockP = `<p>KATEXBLOCKPH${{index}}ENDPH</p>`;
@@ -252,30 +252,21 @@ def extract_with_gemini_vision(uploaded_file, api_key):
     try:
         genai.configure(api_key=api_key)
         
-        # 1. API 키로 사용 가능한 모델 목록을 동적으로 가져옵니다.
-        candidate_models = []
-        try:
-            for m in genai.list_models():
-                if 'generateContent' in m.supported_generation_methods:
-                    if 'flash' in m.name:
-                        candidate_models.insert(0, m.name)
-                    else:
-                        candidate_models.append(m.name)
-        except Exception:
-            pass
-            
-        # 예비 모델 이름 지정
-        fallback_models = [
-            'models/gemini-1.5-flash-latest',
-            'models/gemini-1.5-flash',
-            'models/gemini-2.0-flash-exp',
+        # 기본 및 최신 모델 후보군 설정
+        candidate_models = [
+            'gemini-2.5-flash',
+            'gemini-2.0-flash-exp',
             'gemini-1.5-flash',
             'gemini-1.5-pro'
         ]
         
-        for fb in fallback_models:
-            if fb not in candidate_models:
-                candidate_models.append(fb)
+        try:
+            for m in genai.list_models():
+                if 'generateContent' in m.supported_generation_methods:
+                    if 'flash' in m.name and m.name not in candidate_models:
+                        candidate_models.insert(0, m.name)
+        except Exception:
+            pass
 
         file_bytes = uploaded_file.getvalue()
         file_type = uploaded_file.name.split(".")[-1].lower()
@@ -307,7 +298,8 @@ def extract_with_gemini_vision(uploaded_file, api_key):
             try:
                 model = genai.GenerativeModel(m_name)
                 response = model.generate_content([prompt, content_part])
-                return response.text
+                if response and response.text:
+                    return response.text
             except Exception as e:
                 last_error = e
                 continue
