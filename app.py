@@ -3,45 +3,32 @@ import json
 import re
 import streamlit as st
 import streamlit.components.v1 as components
-from PIL import Image
 
-# google-generativeai 라이브러리 연동
+# PDF 텍스트 추출용 라이브러리 (pip install pypdf)
 try:
-    import google.generativeai as genai
-    HAS_GENAI = True
+    from pypdf import PdfReader
+    HAS_PYPDF = True
 except ImportError:
-    HAS_GENAI = False
+    HAS_PYPDF = False
 
 # 웹 페이지 기본 설정
 st.set_page_config(
-    page_title="스캔북 OCR & AI 대화 정돈 변환기",
+    page_title="수학 수식 문서 정돈 & PDF 변환기",
     page_icon="📚",
     layout="wide"
 )
 
-st.title("📚 스캔북 OCR & AI 대화 문서 정돈 변환기")
-st.write(r"Gemini Vision AI를 연결하여 평가원/수능 특수 수식, 스캔 이미지, **PDF 파일**을 **깨짐 없이 완벽한 라텍스(\$) 수식**으로 정돈합니다.")
+st.title("📚 수학 수식 문서 정돈 & PDF 변환기 (로컬 독립형)")
+st.write(r"API 키 입력 없이, 대화 텍스트나 **디지털 PDF 파일**을 깨짐 없는 완벽한 라텍스(\$) 수식 문서로 정돈하고 PDF로 저장합니다.")
 
-# 사이드바 API 키 설정
-with st.sidebar:
-    st.header("⚙️ Gemini AI 설정")
-    api_key = st.text_input(
-        "Gemini API Key 입력:",
-        type="password",
-        help="Google AI Studio(aistudio.google.com)에서 발급받은 무료 API 키를 입력하세요."
-    )
-    st.caption("💡 API 키를 입력하시면 PDF 및 수능/모의고사 특수 수식도 깨짐 없이 100% 완벽 추출됩니다.")
-
-tab1, tab2 = st.tabs(["📋 1. 대화/텍스트 직접 붙여넣기", "🤖 2. 수학문제지/PDF/스캔북 AI OCR (Gemini Vision)"])
+tab1, tab2 = st.tabs(["📋 1. 대화/텍스트 직접 붙여넣기", "📁 2. 로컬 PDF 파일 업로드 및 추출"])
 
 # 텍스트 전처리 및 정돈 함수
 def preprocess_text(text):
     if not text:
         return ""
-    # \\( \\) 및 \\[ \\] 형태 정비
     text = re.sub(r'\\\((.*?)\\\)', r'\\(\1\\)', text)
     text = re.sub(r'\\\[(.*?)\\\]', r'\\[\1\\]', text)
-    # 3줄 이상 연속된 줄바꿈을 2줄로 정리
     text = re.sub(r'\n{3,}', '\n\n', text)
     return text
 
@@ -168,7 +155,6 @@ HTML_TEMPLATE = """<!DOCTYPE html>
             
             const mathBlocks = [];
 
-            // 1. 디스플레이 수식 ($$ ... $$ 또는 \\[ ... \\]) 보호
             let protectedText = markdownText.replace(/\\$\\$([\\s\\S]+?)\\$\\$/g, (match, math) => {{
                 try {{
                     const html = katex.renderToString(math.trim(), {{ displayMode: true, throwOnError: false }});
@@ -179,7 +165,6 @@ HTML_TEMPLATE = """<!DOCTYPE html>
                 }}
             }});
 
-            // 2. 인라인 수식 ($ ... $ 또는 \\( ... \\)) 보호
             protectedText = protectedText.replace(/\\$([^\\$\\n]+?)\\$/g, (match, math) => {{
                 try {{
                     const html = katex.renderToString(math.trim(), {{ displayMode: false, throwOnError: false }});
@@ -190,10 +175,8 @@ HTML_TEMPLATE = """<!DOCTYPE html>
                 }}
             }});
 
-            // 3. 마크다운 파싱
             let htmlContent = marked.parse(protectedText);
 
-            // 4. KaTeX HTML 복원
             mathBlocks.forEach((item, index) => {{
                 if (item.type === 'block') {{
                     const blockP = `<p>KATEXBLOCKPH${{index}}ENDPH</p>`;
@@ -228,7 +211,7 @@ with tab1:
             "복사한 대화나 텍스트를 붙여넣으세요:",
             value=st.session_state["input_text"],
             height=550,
-            placeholder="Gemini 답변이나 OCR로 뽑은 텍스트를 여기에 붙여넣으세요."
+            placeholder="AI 답변이나 텍스트를 여기에 붙여넣으세요."
         )
         st.session_state["input_text"] = pasted_text
 
@@ -242,111 +225,52 @@ with tab1:
         else:
             st.info("왼쪽에 텍스트를 입력하시면 정돈된 미리보기와 PDF 저장 버튼이 나타납니다.")
 
-# Gemini AI로 이미지/PDF 처리하는 함수
-def extract_with_gemini_vision(uploaded_file, api_key):
-    if not HAS_GENAI:
-        return "오류: google-generativeai 라이브러리가 설치되지 않았습니다. requirements.txt를 확인해 주세요."
-    if not api_key:
-        return "⚠️ 왼쪽 사이드바에 Gemini API Key를 입력하셔야 진행할 수 있습니다!"
-    
-    try:
-        genai.configure(api_key=api_key)
-        
-        # 기본 및 최신 모델 후보군 설정
-        candidate_models = [
-            'gemini-2.5-flash',
-            'gemini-2.0-flash-exp',
-            'gemini-1.5-flash',
-            'gemini-1.5-pro'
-        ]
-        
-        try:
-            for m in genai.list_models():
-                if 'generateContent' in m.supported_generation_methods:
-                    if 'flash' in m.name and m.name not in candidate_models:
-                        candidate_models.insert(0, m.name)
-        except Exception:
-            pass
-
-        file_bytes = uploaded_file.getvalue()
-        file_type = uploaded_file.name.split(".")[-1].lower()
-        
-        if file_type == "pdf":
-            content_part = {
-                "mime_type": "application/pdf",
-                "data": file_bytes
-            }
-        else:
-            mime_map = {"png": "image/png", "jpg": "image/jpeg", "jpeg": "image/jpeg"}
-            content_part = {
-                "mime_type": mime_map.get(file_type, "image/jpeg"),
-                "data": file_bytes
-            }
-
-        prompt = (
-            "이 파일(이미지 또는 PDF 문서)에 포함된 모든 글자와 수학 문제, 수식을 정확하게 읽어서 마크다운 형태로 추출해 줘.\n"
-            "규칙:\n"
-            "1. 모든 수학 기호, 분수, 루트, 지수, 변수 등은 LaTeX 수식 태그인 `$수식$` (문장 속 수식) 또는 `$$수식$$` (독립 수식) 형태로 정확하게 변환해 줘.\n"
-            "2. 보기 선택지(①, ②, ③, ④, ⑤ 등)는 다음과 같이 수식 태그로 정확히 감싸고, 선지 간 띄어쓰기를 넉넉하게 배치해 줘:\n"
-            "   ① \\(1\\)  ② \\(2\\)  ③ \\(3\\)  ④ \\(4\\)  ⑤ \\(5\\)\n"
-            "3. 문단 번호(1., 2. 등)나 문제는 정갈하게 줄바꿈하여 가독성 높게 배치해 줘.\n"
-            "4. 불필요한 서문이나 인사말 없이 오직 추출 및 정돈된 마크다운 내용만 출력해 줘."
-        )
-
-        last_error = None
-        for m_name in candidate_models:
-            try:
-                model = genai.GenerativeModel(m_name)
-                response = model.generate_content([prompt, content_part])
-                if response and response.text:
-                    return response.text
-            except Exception as e:
-                last_error = e
-                continue
-                
-        return f"Gemini Vision 처리 중 오류 발생: {last_error}"
-    except Exception as e:
-        return f"Gemini Vision 처리 중 오류 발생: {e}"
-
-# --- 탭 2: AI Vision OCR (PDF & 이미지 지원) ---
+# --- 탭 2: 로컬 PDF 텍스트 추출 ---
 with tab2:
-    st.subheader("🤖 Gemini Vision AI로 수학 문제지 PDF/이미지 깨짐 없이 추출하기")
-    
-    if not api_key:
-        st.warning("👈 왼쪽 사이드바에서 **Gemini API Key**를 입력해 주세요! (무료 발급: aistudio.google.com)")
+    st.subheader("📁 디지털 PDF 파일에서 텍스트 바로 추출하기")
+    st.caption("💡 텍스트가 포함된 PDF 파일인 경우, API 없이 로컬에서 즉시 텍스트를 뽑아옵니다.")
 
-    uploaded_file = st.file_uploader(
-        "스캔한 책/수학 문제지 파일(PDF, PNG, JPG)을 선택하세요:",
-        type=["pdf", "png", "jpg", "jpeg"]
-    )
+    if not HAS_PYPDF:
+        st.error("⚠️ `pypdf` 라이브러리가 설치되어 있지 않습니다. 터미널에 `pip install pypdf`를 입력해 주세요.")
 
-    if uploaded_file is not None:
-        st.info(f"📄 업로드된 파일: **{uploaded_file.name}**")
+    uploaded_pdf = st.file_uploader("PDF 파일을 선택하세요:", type=["pdf"])
+
+    if uploaded_pdf is not None and HAS_PYPDF:
+        st.info(f"📄 업로드된 파일: **{uploaded_pdf.name}**")
         
-        if st.button("🚀 Gemini Vision AI로 PDF/이미지 글자 및 수식 추출하기"):
-            with st.spinner("✨ Gemini AI가 PDF/이미지의 글자와 수식을 읽어내고 있습니다..."):
-                extracted_result = extract_with_gemini_vision(uploaded_file, api_key)
-                st.session_state["extracted_ocr"] = extracted_result
+        if st.button("🚀 PDF 텍스트 로컬 추출하기"):
+            with st.spinner("📄 PDF에서 텍스트를 읽어오는 중입니다..."):
+                try:
+                    reader = PdfReader(uploaded_pdf)
+                    extracted_text = ""
+                    for i, page in enumerate(reader.pages):
+                        page_text = page.extract_text()
+                        if page_text:
+                            extracted_text += f"\n\n--- [Page {i+1}] ---\n\n" + page_text
+                    
+                    st.session_state["extracted_pdf"] = extracted_text
+                except Exception as e:
+                    st.error(f"PDF 읽기 오류: {e}")
 
-        if "extracted_ocr" in st.session_state and st.session_state["extracted_ocr"]:
+        if "extracted_pdf" in st.session_state and st.session_state["extracted_pdf"]:
             st.divider()
-            st.success("🎉 AI 추출 완료! 추출된 마크다운 원본과 정돈 미리보기를 확인해 보세요.")
+            st.success("🎉 추출 완료! 아래 텍스트를 편집하거나 1번 탭으로 보낼 수 있습니다.")
             
-            col_ocr1, col_ocr2 = st.columns(2)
-            with col_ocr1:
-                st.write("##### ✏️ AI 추출 마크다운 (편집 가능)")
-                edited_ocr = st.text_area(
-                    "추출된 텍스트:",
-                    value=st.session_state["extracted_ocr"],
+            col_pdf1, col_pdf2 = st.columns(2)
+            with col_pdf1:
+                st.write("##### ✏️ 추출된 원본 텍스트 (편집 가능)")
+                edited_pdf_text = st.text_area(
+                    "내용 수정:",
+                    value=st.session_state["extracted_pdf"],
                     height=500
                 )
-                if st.button("📋 이 텍스트를 1번 탭(PDF 저장 영역)으로 보낼까요?"):
-                    st.session_state["input_text"] = edited_ocr
-                    st.toast("1번 탭으로 정돈된 텍스트가 전달되었습니다!")
+                if st.button("📋 이 텍스트를 1번 탭(PDF 저장 영역)으로 보낼까요?", key="send_to_tab1"):
+                    st.session_state["input_text"] = edited_pdf_text
+                    st.toast("1번 탭으로 텍스트가 전달되었습니다!")
 
-            with col_ocr2:
+            with col_pdf2:
                 st.write("##### ✨ 정돈된 문서 미리보기")
-                cleaned_ocr = preprocess_text(edited_ocr)
-                markdown_json_str = json.dumps(cleaned_ocr)
+                cleaned_pdf = preprocess_text(edited_pdf_text)
+                markdown_json_str = json.dumps(cleaned_pdf)
                 html_code = HTML_TEMPLATE.format(markdown_json=markdown_json_str)
                 components.html(html_code, height=520, scrolling=True)
