@@ -1,7 +1,2 @@
 streamlit
-pytesseract
-pypdf
-Pillow
-google-generativeai
-python-docx
-pdf2image
+jinja2
