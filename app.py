@@ -28,7 +28,7 @@ def preprocess_text(text):
     text = re.sub(r'\n{3,}', '\n\n', text)
     return text
 
-# HTML/CSS + KaTeX 렌더링 템플릿 (중괄호 이스케이프 처리 완료)
+# HTML/CSS + KaTeX 렌더링 템플릿 (치환 충돌 완벽 해결)
 HTML_TEMPLATE = """<!DOCTYPE html>
 <html>
 <head>
@@ -151,21 +151,25 @@ HTML_TEMPLATE = """<!DOCTYPE html>
 
             const mathStore = [];
             
-            let processed = text.replace(/\\$\\$([\\s\\S]+?)\\$\\$/g, (match, math) => {{
-                const token = `__MATH_BLOCK_${{mathStore.length}}__`;
+            // 1. 블록 수식 ($$ ... $$) 임시 보호
+            let processed = text.replace(/\\$\\$([\\s\\S]+?)\\$\\$/g, function(match, math) {{
+                const id = mathStore.length;
                 mathStore.push({{ math: math.trim(), display: true }});
-                return token;
+                return "@@BLOCK_" + id + "@@";
             }});
 
-            processed = processed.replace(/\\$([^\\$\\n]+?)\\$/g, (match, math) => {{
-                const token = `__MATH_INLINE_${{mathStore.length}}__`;
+            // 2. 인라인 수식 ($ ... $) 임시 보호
+            processed = processed.replace(/\\$([^\\$\\n]+?)\\$/g, function(match, math) {{
+                const id = mathStore.length;
                 mathStore.push({{ math: math.trim(), display: false }});
-                return token;
+                return "@@INLINE_" + id + "@@";
             }});
 
+            // 3. 마크다운 변환
             let html = marked.parse(processed);
 
-            mathStore.forEach((item, index) => {{
+            // 4. KaTeX로 렌더링하여 복원
+            mathStore.forEach(function(item, index) {{
                 try {{
                     const rendered = katex.renderToString(item.math, {{
                         displayMode: item.display,
@@ -173,13 +177,13 @@ HTML_TEMPLATE = """<!DOCTYPE html>
                     }});
                     
                     if (item.display) {{
-                        html = html.replace(`__MATH_BLOCK_${{index}}__`, `<div class="katex-display">${{rendered}}</div>`);
+                        html = html.replace("@@BLOCK_" + index + "@@", '<div class="katex-display">' + rendered + '</div>');
                     }} else {{
-                        html = html.replace(`__MATH_INLINE_${{index}}__`, rendered);
+                        html = html.replace("@@INLINE_" + index + "@@", rendered);
                     }}
                 }} catch (e) {{
-                    const original = item.display ? `$$${{item.math}}$$` : `$${{item.math}}$`;
-                    html = html.replace(item.display ? `__MATH_BLOCK_${{index}}__` : `__MATH_INLINE_${{index}}__`, original);
+                    const original = item.display ? "$$" + item.math + "$$" : "$" + item.math + "$";
+                    html = html.replace(item.display ? "@@BLOCK_" + index + "@@" : "@@INLINE_" + index + "@@", original);
                 }}
             }});
 
