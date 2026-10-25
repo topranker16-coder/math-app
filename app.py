@@ -25,11 +25,10 @@ st.write(r"워드(.docx) 파일을 업로드하거나 텍스트를 붙여넣어 
 def preprocess_text(text):
     if not text:
         return ""
-    # 불필요한 연속 개행 정리
     text = re.sub(r'\n{3,}', '\n\n', text)
     return text
 
-# HTML/CSS + KaTeX 렌더링 템플릿 (개선된 수식/마크다운 파서 적용)
+# HTML/CSS + KaTeX 렌더링 템플릿 (중괄호 이스케이프 처리 완료)
 HTML_TEMPLATE = """<!DOCTYPE html>
 <html>
 <head>
@@ -42,25 +41,25 @@ HTML_TEMPLATE = """<!DOCTYPE html>
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;700&display=swap');
         
-        body {
+        body {{
             font-family: 'Noto Sans KR', 'Malgun Gothic', sans-serif;
             padding: 20px;
             color: #111111;
             line-height: 1.8;
             font-size: 15px;
             background-color: #ffffff;
-        }
+        }}
 
-        .no-print {
+        .no-print {{
             margin-bottom: 20px;
             position: sticky;
             top: 0;
             background-color: #ffffff;
             padding-bottom: 10px;
             z-index: 100;
-        }
+        }}
 
-        .pdf-btn {
+        .pdf-btn {{
             width: 100%;
             background-color: #2b6cb0;
             color: white;
@@ -72,70 +71,70 @@ HTML_TEMPLATE = """<!DOCTYPE html>
             cursor: pointer;
             box-shadow: 0 2px 5px rgba(0,0,0,0.15);
             transition: background-color 0.2s;
-        }
+        }}
 
-        .pdf-btn:hover {
+        .pdf-btn:hover {{
             background-color: #2c5282;
-        }
+        }}
 
-        h1, h2, h3, h4 {
+        h1, h2, h3, h4 {{
             color: #1a202c;
             margin-top: 1.2em;
             margin-bottom: 0.5em;
             font-weight: 700;
-        }
-        h1 { font-size: 22px; border-bottom: 2px solid #cbd5e0; padding-bottom: 6px; }
-        h2 { font-size: 18px; border-bottom: 1px solid #e2e8f0; padding-bottom: 4px; }
-        h3 { font-size: 16px; }
+        }}
+        h1 {{ font-size: 22px; border-bottom: 2px solid #cbd5e0; padding-bottom: 6px; }}
+        h2 {{ font-size: 18px; border-bottom: 1px solid #e2e8f0; padding-bottom: 4px; }}
+        h3 {{ font-size: 16px; }}
 
-        p { margin-bottom: 0.8em; word-break: keep-all; }
-        ul, ol { padding-left: 20px; margin-bottom: 0.8em; }
-        li { margin-bottom: 0.3em; }
+        p {{ margin-bottom: 0.8em; word-break: keep-all; }}
+        ul, ol {{ padding-left: 20px; margin-bottom: 0.8em; }}
+        li {{ margin-bottom: 0.3em; }}
 
-        blockqoute {
+        blockquote {{
             border-left: 4px solid #3182ce;
             background-color: #f7fafc;
             margin: 1em 0;
             padding: 10px 15px;
             border-radius: 0 4px 4px 0;
-        }
+        }}
 
-        code {
+        code {{
             background-color: #edf2f7;
             padding: 2px 5px;
             border-radius: 4px;
             font-size: 13px;
             color: #c53030;
-        }
+        }}
 
-        pre {
+        pre {{
             background-color: #2d3748;
             color: #f7fafc;
             padding: 15px;
             border-radius: 6px;
             overflow-x: auto;
-        }
+        }}
 
-        pre code {
+        pre code {{
             background-color: transparent;
             color: inherit;
             padding: 0;
-        }
+        }}
 
-        .katex-display {
+        .katex-display {{
             margin: 0.8em 0;
             overflow-x: auto;
             overflow-y: hidden;
-        }
+        }}
 
-        @media print {
-            .no-print { display: none !important; }
-            body {
+        @media print {{
+            .no-print {{ display: none !important; }}
+            body {{
                 padding: 0;
                 margin: 0;
                 background-color: #ffffff;
-            }
-        }
+            }}
+        }}
     </style>
 </head>
 <body>
@@ -147,51 +146,45 @@ HTML_TEMPLATE = """<!DOCTYPE html>
     <script>
         const rawMarkdown = {markdown_json};
 
-        function renderMathAndMarkdown(text) {
+        function renderMathAndMarkdown(text) {{
             if (!text) return '';
 
-            // 1. 수식을 임시 토큰으로 안전하게 보호 (마크다운 파서가 깨뜨리지 않도록 함)
             const mathStore = [];
             
-            // 블록 수식 ($$ ... $$) 치환
-            let processed = text.replace(/\\$\\$([\\s\\S]+?)\\$\\$/g, (match, math) => {
-                const token = `__MATH_BLOCK_${mathStore.length}__`;
-                mathStore.push({ math: math.trim(), display: true });
+            let processed = text.replace(/\\$\\$([\\s\\S]+?)\\$\\$/g, (match, math) => {{
+                const token = `__MATH_BLOCK_${{mathStore.length}}__`;
+                mathStore.push({{ math: math.trim(), display: true }});
                 return token;
-            });
+            }});
 
-            // 인라인 수식 ($ ... $) 치환 (단, 빈 공간이 아닌 경우)
-            processed = processed.replace(/\\$([^\\$\\n]+?)\\$/g, (match, math) => {
-                const token = `__MATH_INLINE_${mathStore.length}__`;
-                mathStore.push({ math: math.trim(), display: false });
+            processed = processed.replace(/\\$([^\\$\\n]+?)\\$/g, (match, math) => {{
+                const token = `__MATH_INLINE_${{mathStore.length}}__`;
+                mathStore.push({{ math: math.trim(), display: false }});
                 return token;
-            });
+            }});
 
-            // 2. 마크다운 변환 수행
             let html = marked.parse(processed);
 
-            // 3. 보호해둔 토큰을 KaTeX 렌더링 결과로 복원
-            mathStore.forEach((item, index) => {
-                try {
-                    const rendered = katex.renderToString(item.math, {
+            mathStore.forEach((item, index) => {{
+                try {{
+                    const rendered = katex.renderToString(item.math, {{
                         displayMode: item.display,
                         throwOnError: false
-                    });
+                    }});
                     
-                    if (item.display) {
-                        html = html.replace(`__MATH_BLOCK_${index}__`, `<div class="katex-display">${rendered}</div>`);
-                    } else {
-                        html = html.replace(`__MATH_INLINE_${index}__`, rendered);
-                    }
-                } catch (e) {
-                    // 렌더링 실패 시 원본 유지
-                    const original = item.display ? `$$${item.math}$$` : `$${item.math}$`;
-                    html = html.replace(item.display ? `__MATH_BLOCK_${index}__` : `__MATH_INLINE_${index}__`, original);
-                }
-            });
+                    if (item.display) {{
+                        html = html.replace(`__MATH_BLOCK_${{index}}__`, `<div class="katex-display">${{rendered}}</div>`);
+                    }} else {{
+                        html = html.replace(`__MATH_INLINE_${{index}}__`, rendered);
+                    }}
+                }} catch (e) {{
+                    const original = item.display ? `$$${{item.math}}$$` : `$${{item.math}}$`;
+                    html = html.replace(item.display ? `__MATH_BLOCK_${{index}}__` : `__MATH_INLINE_${{index}}__`, original);
+                }}
+            }});
 
             return html;
-        }
+        }}
 
         document.getElementById('content').innerHTML = renderMathAndMarkdown(rawMarkdown);
     </script>
