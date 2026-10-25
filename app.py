@@ -4,7 +4,7 @@ import re
 import streamlit as st
 import streamlit.components.v1 as components
 
-# PDF 텍스트 추출용 라이브러리 (pip install pypdf)
+# PDF 텍스트 추출용 라이브러리 (필요시 터미널에 pip install pypdf 실행)
 try:
     from pypdf import PdfReader
     HAS_PYPDF = True
@@ -19,9 +19,9 @@ st.set_page_config(
 )
 
 st.title("📚 수학 수식 문서 정돈 & PDF 변환기 (로컬 독립형)")
-st.write(r"API 키 입력 없이, 대화 텍스트나 **디지털 PDF 파일**을 깨짐 없는 완벽한 라텍스(\$) 수식 문서로 정돈하고 PDF로 저장합니다.")
+st.write(r"API 키나 외부 서버 연결 없이, 컴퓨터 안에서 안전하게 **수학 수식(\$, $$) 문서**를 정돈하고 PDF로 저장합니다.")
 
-tab1, tab2 = st.tabs(["📋 1. 대화/텍스트 직접 붙여넣기", "📁 2. 로컬 PDF 파일 업로드 및 추출"])
+tab1, tab2 = st.tabs(["📋 1. 텍스트 직접 입력 및 정돈", "📁 2. 디지털 PDF 파일 로컬 추출"])
 
 # 텍스트 전처리 및 정돈 함수
 def preprocess_text(text):
@@ -32,7 +32,7 @@ def preprocess_text(text):
     text = re.sub(r'\n{3,}', '\n\n', text)
     return text
 
-# HTML/CSS 출력 템플릿
+# HTML/CSS + KaTeX 렌더링 템플릿
 HTML_TEMPLATE = """<!DOCTYPE html>
 <html>
 <head>
@@ -202,44 +202,44 @@ HTML_TEMPLATE = """<!DOCTYPE html>
 if "input_text" not in st.session_state:
     st.session_state["input_text"] = ""
 
-# --- 탭 1: 직접 붙여넣기 ---
+# --- 탭 1: 직접 입력 및 실시간 정돈 ---
 with tab1:
     col1, col2 = st.columns(2)
     with col1:
-        st.subheader("📥 대화/텍스트 입력")
+        st.subheader("📥 텍스트 / 수식 입력")
         pasted_text = st.text_area(
-            "복사한 대화나 텍스트를 붙여넣으세요:",
+            "마크다운 및 LaTeX 수식($...$)을 포함한 텍스트를 입력하세요:",
             value=st.session_state["input_text"],
             height=550,
-            placeholder="AI 답변이나 텍스트를 여기에 붙여넣으세요."
+            placeholder="예시:\n2차 방정식의 근의 공식은 다음과 같다.\n$x = \\frac{-b \\pm \\sqrt{b^2 - 4ac}}{2a}$"
         )
         st.session_state["input_text"] = pasted_text
 
     with col2:
-        st.subheader("✨ 정돈된 문서 미리보기 & PDF 저장")
+        st.subheader("✨ 수식 렌더링 미리보기 & PDF 저장")
         if st.session_state["input_text"]:
             cleaned = preprocess_text(st.session_state["input_text"])
             markdown_json_str = json.dumps(cleaned)
             html_code = HTML_TEMPLATE.format(markdown_json=markdown_json_str)
             components.html(html_code, height=650, scrolling=True)
         else:
-            st.info("왼쪽에 텍스트를 입력하시면 정돈된 미리보기와 PDF 저장 버튼이 나타납니다.")
+            st.info("왼쪽에 텍스트나 수식을 입력하시면 KaTeX로 깔끔하게 렌더링된 미리보기와 PDF 저장 버튼이 나타납니다.")
 
 # --- 탭 2: 로컬 PDF 텍스트 추출 ---
 with tab2:
-    st.subheader("📁 디지털 PDF 파일에서 텍스트 바로 추출하기")
-    st.caption("💡 텍스트가 포함된 PDF 파일인 경우, API 없이 로컬에서 즉시 텍스트를 뽑아옵니다.")
+    st.subheader("📁 디지털 PDF 파일 로컬 텍스트 추출")
+    st.caption("💡 텍스트 레이어가 포함된 PDF 파일인 경우, 즉시 텍스트를 읽어옵니다.")
 
     if not HAS_PYPDF:
-        st.error("⚠️ `pypdf` 라이브러리가 설치되어 있지 않습니다. 터미널에 `pip install pypdf`를 입력해 주세요.")
+        st.error("⚠️ `pypdf` 라이브러리가 없습니다. 터미널에 `pip install pypdf`를 입력해 주세요.")
 
     uploaded_pdf = st.file_uploader("PDF 파일을 선택하세요:", type=["pdf"])
 
     if uploaded_pdf is not None and HAS_PYPDF:
         st.info(f"📄 업로드된 파일: **{uploaded_pdf.name}**")
         
-        if st.button("🚀 PDF 텍스트 로컬 추출하기"):
-            with st.spinner("📄 PDF에서 텍스트를 읽어오는 중입니다..."):
+        if st.button("🚀 PDF 텍스트 추출하기"):
+            with st.spinner("📄 PDF 읽는 중..."):
                 try:
                     reader = PdfReader(uploaded_pdf)
                     extracted_text = ""
@@ -250,26 +250,26 @@ with tab2:
                     
                     st.session_state["extracted_pdf"] = extracted_text
                 except Exception as e:
-                    st.error(f"PDF 읽기 오류: {e}")
+                    st.error(f"오류 발생: {e}")
 
         if "extracted_pdf" in st.session_state and st.session_state["extracted_pdf"]:
             st.divider()
-            st.success("🎉 추출 완료! 아래 텍스트를 편집하거나 1번 탭으로 보낼 수 있습니다.")
+            st.success("🎉 추출 완료!")
             
             col_pdf1, col_pdf2 = st.columns(2)
             with col_pdf1:
-                st.write("##### ✏️ 추출된 원본 텍스트 (편집 가능)")
+                st.write("##### ✏️ 추출된 텍스트 편집")
                 edited_pdf_text = st.text_area(
                     "내용 수정:",
                     value=st.session_state["extracted_pdf"],
                     height=500
                 )
-                if st.button("📋 이 텍스트를 1번 탭(PDF 저장 영역)으로 보낼까요?", key="send_to_tab1"):
+                if st.button("📋 1번 탭(정돈/PDF 출력 영역)으로 보내기", key="send_to_tab1"):
                     st.session_state["input_text"] = edited_pdf_text
-                    st.toast("1번 탭으로 텍스트가 전달되었습니다!")
+                    st.toast("1번 탭으로 전송되었습니다!")
 
             with col_pdf2:
-                st.write("##### ✨ 정돈된 문서 미리보기")
+                st.write("##### ✨ 미리보기")
                 cleaned_pdf = preprocess_text(edited_pdf_text)
                 markdown_json_str = json.dumps(cleaned_pdf)
                 html_code = HTML_TEMPLATE.format(markdown_json=markdown_json_str)
